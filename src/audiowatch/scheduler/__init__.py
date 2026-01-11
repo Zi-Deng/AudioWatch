@@ -237,24 +237,27 @@ class ScrapeScheduler:
 
 def create_scrape_job(
     settings: Settings,
-    max_pages: int = 10,
     headless: bool = True,
 ) -> Callable[[], None]:
     """Create a synchronous scrape function for the scheduler.
 
+    Uses settings.scraper.scheduled_max_pages for page limit (default: 2).
+    This is intentionally lower than initial scrapes since scheduled jobs
+    run frequently and only need to check recent listings.
+
     Args:
         settings: Application settings
-        max_pages: Maximum pages to scrape per category
         headless: Run browser in headless mode
 
     Returns:
         A synchronous function that runs the async scrape operation.
     """
     log = get_logger("audiowatch.scheduler")
+    max_pages = settings.scraper.scheduled_max_pages
 
     def sync_scrape() -> None:
         """Synchronous wrapper for the async scrape operation."""
-        log.info("Starting scheduled scrape")
+        log.info("Starting scheduled scrape", max_pages_per_category=max_pages)
         try:
             asyncio.run(_run_scheduled_scrape(settings, max_pages, headless))
             log.info("Scheduled scrape completed")

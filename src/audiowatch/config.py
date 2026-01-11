@@ -29,6 +29,18 @@ class ScraperConfig(BaseModel):
         le=365,
         description="How far back to scrape on first run (days)",
     )
+    initial_max_pages: int = Field(
+        default=10,
+        ge=1,
+        le=100,
+        description="Maximum pages per category for initial scrape",
+    )
+    scheduled_max_pages: int = Field(
+        default=2,
+        ge=1,
+        le=20,
+        description="Maximum pages per category for scheduled scrapes (lower since they run frequently)",
+    )
     rate_limit_delay_seconds: float = Field(
         default=2.0,
         ge=0.5,

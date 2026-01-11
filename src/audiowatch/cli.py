@@ -128,13 +128,13 @@ def run(
         ),
     ] = False,
     max_pages: Annotated[
-        int,
+        Optional[int],
         typer.Option(
             "--max-pages",
             "-p",
-            help="Maximum pages to scrape per category.",
+            help="Override max pages per category (default: from config).",
         ),
-    ] = 10,
+    ] = None,
     headless: Annotated[
         bool,
         typer.Option(
@@ -150,7 +150,13 @@ def run(
         ),
     ] = False,
 ) -> None:
-    """Start the AudioWatch scraper and notification service."""
+    """Start the AudioWatch scraper and notification service.
+
+    In continuous mode (default): Initial scrape uses 'initial_max_pages' (default: 10),
+    then scheduled scrapes use 'scheduled_max_pages' (default: 2) every N minutes.
+
+    In --once mode: Uses 'initial_max_pages' or --max-pages override.
+    """
     from audiowatch.config import get_settings
     from audiowatch.database import get_engine, init_database
     from audiowatch.logging import get_logger, setup_logging
@@ -171,22 +177,31 @@ def run(
     init_database(engine)
 
     if once:
-        console.print("[blue]Running scraper once...[/blue]")
-        asyncio.run(_run_scrape_once(settings, max_pages, headless))
+        # For --once mode, use CLI override or config's initial_max_pages
+        pages = max_pages if max_pages is not None else settings.scraper.initial_max_pages
+        console.print(f"[blue]Running scraper once ({pages} pages per category)...[/blue]")
+        asyncio.run(_run_scrape_once(settings, pages, headless))
     else:
         # Use the scheduler for continuous monitoring
         from audiowatch.scheduler import ScrapeScheduler, create_scrape_job
 
+        initial_pages = max_pages if max_pages is not None else settings.scraper.initial_max_pages
+        scheduled_pages = settings.scraper.scheduled_max_pages
+
         console.print(
             f"[blue]Starting scheduled scraper (every {settings.scraper.poll_interval_minutes} minutes)...[/blue]"
+        )
+        console.print(
+            f"[dim]Initial scrape: {initial_pages} pages/category | "
+            f"Scheduled scrapes: {scheduled_pages} pages/category[/dim]"
         )
         console.print("[dim]Press Ctrl+C to stop[/dim]\n")
 
         # Create job store path for persistence
         job_store_path = settings.database.path.parent / "scheduler.db"
 
-        # Create the scrape job function
-        scrape_func = create_scrape_job(settings, max_pages, headless)
+        # Create the scrape job function (uses scheduled_max_pages from config)
+        scrape_func = create_scrape_job(settings, headless)
 
         # Create and start the scheduler
         scheduler = ScrapeScheduler(
@@ -195,12 +210,14 @@ def run(
             job_store_path=job_store_path,
         )
 
-        # Display next run time
+        # Run initial scrape with higher page limit if not skipped
         if not skip_initial:
-            console.print("[green]Running initial scrape...[/green]")
+            console.print(f"[green]Running initial scrape ({initial_pages} pages/category)...[/green]")
+            asyncio.run(_run_scrape_once(settings, initial_pages, headless))
+            console.print("[green]Initial scrape complete. Starting scheduler...[/green]\n")
 
-        # Run the scheduler (blocking)
-        scheduler.run_blocking(run_immediately=not skip_initial)
+        # Run the scheduler (blocking) - skip_initial since we already ran it
+        scheduler.run_blocking(run_immediately=False)
 
 
 async def _run_scrape_once(settings, max_pages: int, headless: bool) -> None:

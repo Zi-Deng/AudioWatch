@@ -77,12 +77,19 @@ The scheduler runs scrapes at configurable intervals (1-60 minutes) with the fol
 - **Job Persistence**: Scheduler state survives restarts (stored in `data/scheduler.db`)
 - **Graceful Shutdown**: Press `Ctrl+C` to stop cleanly
 - **Configurable Interval**: Set `poll_interval_minutes` in config.yaml
-- **Initial Scrape**: Runs immediately on start (skip with `--skip-initial`)
+- **Smart Page Limits**: Initial scrape is thorough, scheduled scrapes are quick
 
 ```yaml
 scraper:
-  poll_interval_minutes: 5  # How often to check (1-60 minutes)
+  poll_interval_minutes: 5      # How often to check (1-60 minutes)
+  initial_max_pages: 10         # Pages per category for initial scrape
+  scheduled_max_pages: 2        # Pages per category for scheduled scrapes
 ```
+
+| Scrape Type | Default | Total Pages | Purpose |
+|-------------|---------|-------------|---------|
+| Initial | 10/category | ~100 | Backfill listings on first run |
+| Scheduled | 2/category | ~20 | Quick check every N minutes |
 
 ## Configuration
 

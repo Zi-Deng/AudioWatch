@@ -264,6 +264,12 @@ scraper:
   # How far back to look for listings (days)
   initial_scrape_days: 30
 
+  # Pages per category for initial scrape (thorough)
+  initial_max_pages: 10
+
+  # Pages per category for scheduled scrapes (only need recent listings)
+  scheduled_max_pages: 2
+
   # Delay between page requests (rate limiting)
   rate_limit_delay_seconds: 2.0
 
@@ -271,6 +277,21 @@ scraper:
   headless: true
   timeout_seconds: 30
 ```
+
+### Page Limits Explained
+
+The scheduler uses **different page limits** for initial vs scheduled scrapes:
+
+| Scrape Type | Default Pages | Purpose |
+|-------------|---------------|---------|
+| **Initial** | 10 per category | Thorough scan on first run (100 pages total) |
+| **Scheduled** | 2 per category | Quick check every N minutes (20 pages total) |
+
+**Why the difference?**
+- Initial scrape needs to backfill listings from the past 30 days
+- Scheduled scrapes run every 5 minutes, so only the most recent listings matter
+- Head-Fi classifieds doesn't update fast enough to warrant deep scrapes every 5 minutes
+- Lower page limits = faster scrapes, less server load, quicker notifications
 
 ### Interval Guidelines
 
