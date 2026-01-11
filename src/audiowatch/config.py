@@ -100,6 +100,31 @@ class NotificationsConfig(BaseModel):
     discord: DiscordConfig = Field(default_factory=DiscordConfig)
 
 
+class RuleFilters(BaseModel):
+    """Optional filters specific to a watch rule.
+
+    These override or extend global filters for this specific rule.
+    """
+
+    listing_types: list[str] | None = Field(
+        default=None,
+        description="Override: only match these listing types for this rule",
+    )
+    ships_to: list[str] | None = Field(
+        default=None,
+        description="Override: only match listings shipping to these regions",
+    )
+    exclude_status: list[str] | None = Field(
+        default=None,
+        description="Override: exclude these statuses for this rule",
+    )
+    min_seller_reputation: int | None = Field(
+        default=None,
+        ge=0,
+        description="Override: minimum seller reputation for this rule",
+    )
+
+
 class WatchRule(BaseModel):
     """A single watch rule for matching listings."""
 
@@ -110,6 +135,18 @@ class WatchRule(BaseModel):
         description="Notification channels to use (email, discord)",
     )
     enabled: bool = Field(default=True, description="Whether this rule is active")
+
+    # Per-rule category filtering
+    categories: list[str] | None = Field(
+        default=None,
+        description="Only match listings in these categories (None = all categories)",
+    )
+
+    # Per-rule filters (override global filters)
+    filters: RuleFilters | None = Field(
+        default=None,
+        description="Rule-specific filters that override global filters",
+    )
 
     @field_validator("notify_via", mode="before")
     @classmethod
@@ -122,6 +159,36 @@ class WatchRule(BaseModel):
             if channel not in valid_channels:
                 raise ValueError(f"Invalid notification channel: {channel}")
         return v
+
+
+class GlobalFilters(BaseModel):
+    """Global filters applied to all watch rules.
+
+    These filters are automatically AND-ed with every watch rule expression.
+    Use this to set baseline criteria like listing type or shipping regions.
+    """
+
+    listing_types: list[str] = Field(
+        default_factory=list,
+        description="Only match these listing types (e.g., ['For Sale', 'For Sale/Trade']). Empty = all types.",
+    )
+    exclude_listing_types: list[str] = Field(
+        default_factory=list,
+        description="Listing types to exclude (e.g., ['Want To Buy'])",
+    )
+    ships_to: list[str] = Field(
+        default_factory=list,
+        description="Only match listings that ship to these regions",
+    )
+    exclude_status: list[str] = Field(
+        default_factory=lambda: ["sold", "expired", "deleted"],
+        description="Listing statuses to exclude (sold, expired, deleted)",
+    )
+    min_seller_reputation: int | None = Field(
+        default=None,
+        ge=0,
+        description="Minimum seller reputation score",
+    )
 
 
 class DashboardConfig(BaseModel):
@@ -163,6 +230,7 @@ class Settings(BaseSettings):
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
     notifications: NotificationsConfig = Field(default_factory=NotificationsConfig)
     watch_rules: list[WatchRule] = Field(default_factory=list)
+    global_filters: GlobalFilters = Field(default_factory=GlobalFilters)
     dashboard: DashboardConfig = Field(default_factory=DashboardConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
 

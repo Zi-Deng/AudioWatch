@@ -101,7 +101,8 @@ class ListingRepository:
             existing.image_url = scraped.image_url
             existing.last_edited_at = scraped.last_edited_at
             existing.last_seen_at = now
-            existing.status = ListingStatus.ACTIVE.value
+            # Use scraped status if detected, otherwise keep as active
+            existing.status = scraped.status if scraped.status else ListingStatus.ACTIVE.value
 
             if scraped.category:
                 existing.category = scraped.category
@@ -134,7 +135,8 @@ class ListingRepository:
                 last_edited_at=scraped.last_edited_at,
                 first_seen_at=now,
                 last_seen_at=now,
-                status=ListingStatus.ACTIVE.value,
+                # Use scraped status if detected, otherwise default to active
+                status=scraped.status if scraped.status else ListingStatus.ACTIVE.value,
             )
             self.session.add(listing)
 

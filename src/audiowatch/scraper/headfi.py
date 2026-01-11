@@ -21,6 +21,7 @@ from audiowatch.scraper.models import (
     CategoryInfo,
     ScrapedListing,
     ScrapeResult,
+    get_leaf_categories,
 )
 
 logger = get_logger(__name__)
@@ -147,6 +148,23 @@ class HeadFiScraper:
             title_el = element.find(class_="hfcListingTitle")
             title = title_el.get_text(strip=True) if title_el else "Unknown"
 
+            # Detect sold/closed status from element classes or content
+            status = "active"
+            element_classes = element.get("class", [])
+            if isinstance(element_classes, list):
+                element_classes_str = " ".join(element_classes).lower()
+            else:
+                element_classes_str = str(element_classes).lower()
+
+            # Check for common sold/closed class patterns
+            if any(indicator in element_classes_str for indicator in ["sold", "closed", "expired", "inactive"]):
+                if "sold" in element_classes_str:
+                    status = "sold"
+                elif "closed" in element_classes_str:
+                    status = "closed"
+                elif "expired" in element_classes_str:
+                    status = "expired"
+
             # Price and type
             price = None
             currency = "USD"
@@ -156,9 +174,22 @@ class HeadFiScraper:
             if price_el:
                 label = price_el.find("span", class_="label")
                 if label:
-                    listing_type = label.get_text(strip=True)
+                    label_text = label.get_text(strip=True)
+                    listing_type = label_text
+
+                    # Check label for sold/closed indicators
+                    label_lower = label_text.lower()
+                    if "sold" in label_lower:
+                        status = "sold"
+                    elif "closed" in label_lower:
+                        status = "closed"
 
                 price_text = price_el.get_text(strip=True)
+
+                # Check price text for SOLD indicator (common pattern)
+                if "sold" in price_text.lower():
+                    status = "sold"
+
                 # Extract price: look for number followed by currency
                 price_match = re.search(r"([\d,]+\.?\d*)\s*(USD|EUR|GBP|CAD|AUD)?", price_text)
                 if price_match:
@@ -169,6 +200,13 @@ class HeadFiScraper:
                         pass
                     if price_match.group(2):
                         currency = price_match.group(2)
+
+            # Also check title for [SOLD] or similar patterns
+            title_lower = title.lower()
+            if "[sold]" in title_lower or "(sold)" in title_lower or title_lower.startswith("sold:"):
+                status = "sold"
+            elif "[closed]" in title_lower or "(closed)" in title_lower:
+                status = "closed"
 
             # Image
             img = element.find("img", class_="hfcCoverImage--clear")
@@ -246,6 +284,7 @@ class HeadFiScraper:
                 price=price,
                 currency=currency,
                 listing_type=listing_type,
+                status=status,
                 condition=condition,
                 negotiability=negotiability,
                 ships_to=ships_to,
@@ -415,24 +454,37 @@ class HeadFiScraper:
         max_pages_per_category: int | None = None,
         max_age_days: int | None = 30,
         categories: list[str] | None = None,
+        leaf_only: bool = True,
     ) -> AsyncIterator[ScrapedListing]:
         """Scrape listings from all (or specified) categories.
 
         Args:
             max_pages_per_category: Max pages per category.
             max_age_days: Stop when listings are older than this.
-            categories: List of category slugs to scrape (None for all).
+            categories: List of category slugs to scrape (None for all leaf categories).
+            leaf_only: If True, only scrape leaf categories to avoid duplicates.
 
         Yields:
             ScrapedListing objects.
         """
-        cats_to_scrape = HEADFI_CATEGORIES
+        # Default to leaf categories to avoid duplicates
+        if leaf_only:
+            cats_to_scrape = get_leaf_categories()
+        else:
+            cats_to_scrape = HEADFI_CATEGORIES
 
+        # Filter by specific categories if provided
         if categories:
             cats_to_scrape = [
-                cat for cat in HEADFI_CATEGORIES
+                cat for cat in cats_to_scrape
                 if cat.slug in categories
             ]
+
+        logger.info(
+            "Scraping categories",
+            count=len(cats_to_scrape),
+            categories=[c.name for c in cats_to_scrape],
+        )
 
         for category in cats_to_scrape:
             async for listing in self.scrape_category(
@@ -444,6 +496,78 @@ class HeadFiScraper:
 
             # Rate limit between categories
             await asyncio.sleep(self.rate_limit_delay)
+
+    async def scrape_all_leaf_categories(
+        self,
+        max_pages_per_category: int | None = 10,
+        max_age_days: int | None = 30,
+    ) -> ScrapeResult:
+        """Scrape all leaf categories and return a ScrapeResult.
+
+        This is the recommended method for comprehensive scraping as it:
+        - Only scrapes leaf categories (avoids duplicate listings)
+        - Captures proper category data for each listing
+        - Returns a structured result like scrape_recent()
+
+        Args:
+            max_pages_per_category: Max pages per category.
+            max_age_days: Stop when listings are older than this.
+
+        Returns:
+            ScrapeResult with all scraped listings.
+        """
+        result = ScrapeResult(
+            success=False,
+            started_at=datetime.now(),
+        )
+
+        leaf_cats = get_leaf_categories()
+        total_pages = 0
+
+        logger.info(
+            "Starting leaf category scrape",
+            categories=len(leaf_cats),
+            max_pages_per_category=max_pages_per_category,
+            max_age_days=max_age_days,
+        )
+
+        try:
+            for category in leaf_cats:
+                logger.info("Scraping category", category=category.name)
+                pages_in_category = 0
+
+                async for listing in self.scrape_category(
+                    category,
+                    max_pages=max_pages_per_category,
+                    max_age_days=max_age_days,
+                ):
+                    result.listings.append(listing)
+                    # Track pages (rough estimate based on listings)
+                    if len(result.listings) % 20 == 0:
+                        pages_in_category = len(result.listings) // 20
+
+                total_pages += max(1, pages_in_category)
+
+                # Rate limit between categories
+                await asyncio.sleep(self.rate_limit_delay)
+
+            result.success = True
+            result.total_found = len(result.listings)
+            result.pages_scraped = total_pages
+
+        except Exception as e:
+            logger.error("Scrape failed", error=str(e))
+            result.errors.append(str(e))
+
+        result.completed_at = datetime.now()
+        logger.info(
+            "Leaf category scrape complete",
+            success=result.success,
+            listings=result.total_found,
+            categories=len(leaf_cats),
+        )
+
+        return result
 
     async def scrape_recent(
         self,

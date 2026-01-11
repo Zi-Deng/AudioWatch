@@ -42,6 +42,15 @@ class Negotiability(str, Enum):
     NEGOTIABLE = "Negotiable"
 
 
+class ListingStatus(str, Enum):
+    """Current status of a listing."""
+
+    ACTIVE = "active"
+    SOLD = "sold"
+    CLOSED = "closed"
+    EXPIRED = "expired"
+
+
 class ScrapedListing(BaseModel):
     """A listing scraped from Head-Fi classifieds.
 
@@ -58,6 +67,9 @@ class ScrapedListing(BaseModel):
     price: Decimal | None = Field(default=None, description="Listed price")
     currency: str = Field(default="USD", description="Price currency")
     listing_type: str = Field(default="For Sale", description="Type of listing")
+
+    # Status
+    status: str = Field(default="active", description="Listing status (active, sold, closed)")
 
     # Item details
     condition: str | None = Field(default=None, description="Item condition")
@@ -126,90 +138,150 @@ class CategoryInfo(BaseModel):
     slug: str = Field(..., description="URL slug")
     category_id: int = Field(..., description="Category ID")
     url: str = Field(..., description="Full category URL")
+    parent_id: int | None = Field(default=None, description="Parent category ID (None if top-level)")
+    is_leaf: bool = Field(default=True, description="True if this is a leaf category (no children)")
     listing_count: int | None = Field(default=None, description="Number of listings")
 
 
-# Head-Fi category definitions
+# Head-Fi category hierarchy:
+#
+# Headphones For Sale / Trade (1) [PARENT]
+#   ├── Full-Size (2) [LEAF]
+#   └── In-Ear Monitors (3) [LEAF]
+#
+# Amplification For Sale / Trade (4) [PARENT]
+#   ├── Desktop (5) [LEAF]
+#   └── Portable (6) [LEAF]
+#
+# Source Components For Sale / Trade (7) [PARENT]
+#   ├── DACs (8) [LEAF]
+#   ├── DAC/Amps (9) [LEAF]
+#   ├── DAPs (10) [LEAF]
+#   └── CD Players (11) [LEAF]
+#
+# Cables, Speakers, Accessories For Sale / Trade (12) [LEAF - no children]
+# Media For Sale / Trade (13) [LEAF - no children]
+
 HEADFI_CATEGORIES = [
+    # === Headphones ===
     CategoryInfo(
         name="Headphones For Sale / Trade",
         slug="headphones-for-sale-trade",
         category_id=1,
         url="/classifieds/categories/headphones-for-sale-trade.1",
+        parent_id=None,
+        is_leaf=False,  # Parent category - don't scrape directly
     ),
     CategoryInfo(
-        name="Full-Size",
+        name="Full-Size Headphones",
         slug="full-size",
         category_id=2,
         url="/classifieds/categories/full-size.2",
+        parent_id=1,
+        is_leaf=True,
     ),
     CategoryInfo(
         name="In-Ear Monitors",
         slug="in-ear-monitors",
         category_id=3,
         url="/classifieds/categories/in-ear-monitors.3",
+        parent_id=1,
+        is_leaf=True,
     ),
+    # === Amplification ===
     CategoryInfo(
         name="Amplification For Sale / Trade",
         slug="amplification-for-sale-trade",
         category_id=4,
         url="/classifieds/categories/amplification-for-sale-trade.4",
+        parent_id=None,
+        is_leaf=False,  # Parent category - don't scrape directly
     ),
     CategoryInfo(
-        name="Desktop",
+        name="Desktop Amps",
         slug="desktop",
         category_id=5,
         url="/classifieds/categories/desktop.5",
+        parent_id=4,
+        is_leaf=True,
     ),
     CategoryInfo(
-        name="Portable",
+        name="Portable Amps",
         slug="portable",
         category_id=6,
         url="/classifieds/categories/portable.6",
+        parent_id=4,
+        is_leaf=True,
     ),
+    # === Source Components ===
     CategoryInfo(
         name="Source Components For Sale / Trade",
         slug="source-components-for-sale-trade",
         category_id=7,
         url="/classifieds/categories/source-components-for-sale-trade.7",
+        parent_id=None,
+        is_leaf=False,  # Parent category - don't scrape directly
     ),
     CategoryInfo(
         name="DACs",
         slug="dacs",
         category_id=8,
         url="/classifieds/categories/dacs.8",
+        parent_id=7,
+        is_leaf=True,
     ),
     CategoryInfo(
         name="DAC/Amps",
         slug="dac-amps",
         category_id=9,
         url="/classifieds/categories/dac-amps.9",
+        parent_id=7,
+        is_leaf=True,
     ),
     CategoryInfo(
         name="DAPs",
         slug="daps",
         category_id=10,
         url="/classifieds/categories/daps.10",
+        parent_id=7,
+        is_leaf=True,
     ),
     CategoryInfo(
         name="CD Players",
         slug="cd-players",
         category_id=11,
         url="/classifieds/categories/cd-players.11",
+        parent_id=7,
+        is_leaf=True,
     ),
+    # === Standalone Categories (no children) ===
     CategoryInfo(
-        name="Cables, Speakers, Accessories For Sale / Trade",
+        name="Cables & Accessories",
         slug="cables-speakers-accessories-for-sale-trade",
         category_id=12,
         url="/classifieds/categories/cables-speakers-accessories-for-sale-trade.12",
+        parent_id=None,
+        is_leaf=True,
     ),
     CategoryInfo(
-        name="Media For Sale / Trade",
+        name="Media",
         slug="media-for-sale-trade",
         category_id=13,
         url="/classifieds/categories/media-for-sale-trade.13",
+        parent_id=None,
+        is_leaf=True,
     ),
 ]
+
+
+def get_leaf_categories() -> list[CategoryInfo]:
+    """Get only leaf categories (no children) to avoid duplicate listings."""
+    return [cat for cat in HEADFI_CATEGORIES if cat.is_leaf]
+
+
+def get_parent_categories() -> list[CategoryInfo]:
+    """Get parent categories (have children)."""
+    return [cat for cat in HEADFI_CATEGORIES if not cat.is_leaf]
 
 
 def get_category_by_slug(slug: str) -> CategoryInfo | None:
@@ -226,3 +298,8 @@ def get_category_by_id(category_id: int) -> CategoryInfo | None:
         if cat.category_id == category_id:
             return cat
     return None
+
+
+def get_children_of(parent_id: int) -> list[CategoryInfo]:
+    """Get child categories of a parent."""
+    return [cat for cat in HEADFI_CATEGORIES if cat.parent_id == parent_id]

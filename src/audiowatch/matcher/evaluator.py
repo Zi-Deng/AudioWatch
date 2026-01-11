@@ -42,6 +42,7 @@ class RuleEvaluator:
         "type": "listing_type",
         "shipping": "shipping_regions",
         "ships_to": "shipping_regions",
+        "status": "status",
     }
 
     def __init__(self, expression: Expression):

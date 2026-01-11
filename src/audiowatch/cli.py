@@ -205,10 +205,12 @@ async def _run_scrape_once(settings, max_pages: int, headless: bool) -> None:
             rate_limit_delay=settings.scraper.rate_limit_delay_seconds,
             timeout=settings.scraper.timeout_seconds * 1000,
         ) as scraper:
-            progress.update(task, description="Scraping Head-Fi classifieds...")
+            progress.update(task, description="Scraping Head-Fi classifieds by category...")
 
-            result = await scraper.scrape_recent(
-                max_pages=max_pages,
+            # Scrape all leaf categories to get proper category data
+            # This avoids duplicates by only scraping leaf categories (not parent categories)
+            result = await scraper.scrape_all_leaf_categories(
+                max_pages_per_category=max_pages,
                 max_age_days=settings.scraper.initial_scrape_days,
             )
 
@@ -262,7 +264,8 @@ async def _run_scrape_once(settings, max_pages: int, headless: bool) -> None:
 
                     if all_rules:
                         orchestrator = NotificationOrchestrator(settings, session)
-                        orchestrator.load_rules(all_rules)
+                        # Pass both wrapped rules and original config rules for per-rule settings
+                        orchestrator.load_rules(all_rules, settings.watch_rules)
 
                         progress.update(
                             task,
