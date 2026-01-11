@@ -6,10 +6,14 @@ Supports boolean expressions like:
 - title contains "HD800" AND price < 1000
 - category = "headphones" OR category = "amplification"
 - NOT title contains "broken"
+- title matches "64\\s*[Aa]udio"  (regex)
+- title fuzzy_contains "ThieAudio Monarch MK4"  (fuzzy ~80% match)
 
 Supported operators:
 - Comparison: =, !=, <, >, <=, >=
 - String: contains, startswith, endswith
+- Regex: matches (case-insensitive regex pattern)
+- Fuzzy: fuzzy_contains (similarity matching, ~80% threshold)
 - Boolean: AND, OR, NOT
 """
 
@@ -53,6 +57,8 @@ class Operator(str, Enum):
     CONTAINS = "contains"
     STARTSWITH = "startswith"
     ENDSWITH = "endswith"
+    MATCHES = "matches"  # Regex matching
+    FUZZY_CONTAINS = "fuzzy_contains"  # Fuzzy/similarity matching
 
 
 class BoolOp(str, Enum):
@@ -122,6 +128,8 @@ class RuleParser:
             CaselessKeyword("contains")
             | CaselessKeyword("startswith")
             | CaselessKeyword("endswith")
+            | CaselessKeyword("matches")
+            | CaselessKeyword("fuzzy_contains")
         ).setResultsName("operator")
 
         # Condition: field op value
@@ -164,6 +172,8 @@ class RuleParser:
             "contains": Operator.CONTAINS,
             "startswith": Operator.STARTSWITH,
             "endswith": Operator.ENDSWITH,
+            "matches": Operator.MATCHES,
+            "fuzzy_contains": Operator.FUZZY_CONTAINS,
         }
 
         operator = op_map.get(op_str)

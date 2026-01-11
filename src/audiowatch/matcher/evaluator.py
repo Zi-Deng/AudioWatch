@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import re
 from decimal import Decimal
 from typing import Any
+
+from rapidfuzz import fuzz
 
 from audiowatch.database.models import Listing
 from audiowatch.logging import get_logger
@@ -17,6 +20,9 @@ from audiowatch.matcher.parser import (
 )
 
 logger = get_logger(__name__)
+
+# Default fuzzy matching threshold (0-100)
+FUZZY_THRESHOLD = 80
 
 
 class RuleEvaluator:
@@ -148,6 +154,10 @@ class RuleEvaluator:
                 return self._startswith(field_value, compare_value)
             case Operator.ENDSWITH:
                 return self._endswith(field_value, compare_value)
+            case Operator.MATCHES:
+                return self._matches_regex(field_value, compare_value)
+            case Operator.FUZZY_CONTAINS:
+                return self._fuzzy_contains(field_value, compare_value)
             case _:
                 raise ValueError(f"Unknown operator: {cond.operator}")
 
@@ -194,6 +204,54 @@ class RuleEvaluator:
         if isinstance(field_value, str) and isinstance(compare_value, str):
             return field_value.lower().endswith(compare_value.lower())
         return str(field_value).endswith(str(compare_value))
+
+    def _matches_regex(self, field_value: Any, pattern: Any) -> bool:
+        """Check if field matches a regex pattern (case-insensitive).
+
+        Args:
+            field_value: The field value to check.
+            pattern: The regex pattern to match.
+
+        Returns:
+            True if the pattern matches anywhere in the field.
+        """
+        if not isinstance(field_value, str):
+            field_value = str(field_value)
+        if not isinstance(pattern, str):
+            pattern = str(pattern)
+
+        try:
+            return bool(re.search(pattern, field_value, re.IGNORECASE))
+        except re.error as e:
+            logger.warning("Invalid regex pattern", pattern=pattern, error=str(e))
+            return False
+
+    def _fuzzy_contains(
+        self, field_value: Any, compare_value: Any, threshold: int = FUZZY_THRESHOLD
+    ) -> bool:
+        """Check if field fuzzy-matches value using similarity scoring.
+
+        Uses token_set_ratio which handles word order variations and partial matches well.
+        For example, "ThieAudio Monarch MK4" will match "Monarch MK 4 ThieAudio".
+
+        Args:
+            field_value: The field value to check.
+            compare_value: The value to fuzzy match.
+            threshold: Minimum similarity score (0-100) to consider a match.
+
+        Returns:
+            True if similarity score >= threshold.
+        """
+        if not isinstance(field_value, str):
+            field_value = str(field_value)
+        if not isinstance(compare_value, str):
+            compare_value = str(compare_value)
+
+        # Use token_set_ratio for better matching of variations
+        # It handles: word order, extra words, spacing differences
+        score = fuzz.token_set_ratio(field_value.lower(), compare_value.lower())
+
+        return score >= threshold
 
 
 def evaluate_listing(listing: Listing, expression: str) -> bool:
