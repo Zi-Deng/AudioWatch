@@ -272,6 +272,33 @@ watch_rules:
     notify_via: [discord]
 ```
 
+## Dashboard
+
+AudioWatch includes a web-based dashboard built with Streamlit for browsing listings and managing rules.
+
+```bash
+# Start the dashboard
+audiowatch dashboard
+```
+
+The dashboard includes:
+
+| Page | Features |
+|------|----------|
+| **Overview** | Key metrics, last scrape status, category breakdown |
+| **Listings** | Search/filter listings, view details, price history |
+| **Watch Rules** | Create, edit, delete, and toggle watch rules |
+| **Notifications** | View notification history, filter by channel/status |
+| **Analytics** | Price trends, category analysis, seller statistics |
+
+The dashboard runs at `http://localhost:8501` by default. Configure the port in `config.yaml`:
+
+```yaml
+dashboard:
+  port: 8501
+  host: "localhost"
+```
+
 ## Development
 
 ```bash
