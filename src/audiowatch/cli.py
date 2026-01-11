@@ -132,7 +132,7 @@ def run(
         typer.Option(
             "--max-pages",
             "-p",
-            help="Maximum pages to scrape per run.",
+            help="Maximum pages to scrape per category.",
         ),
     ] = 10,
     headless: Annotated[
@@ -142,10 +142,17 @@ def run(
             help="Run browser in headless mode.",
         ),
     ] = True,
+    skip_initial: Annotated[
+        bool,
+        typer.Option(
+            "--skip-initial",
+            help="Skip the initial scrape when starting scheduler.",
+        ),
+    ] = False,
 ) -> None:
     """Start the AudioWatch scraper and notification service."""
     from audiowatch.config import get_settings
-    from audiowatch.database import get_engine, get_session, init_database
+    from audiowatch.database import get_engine, init_database
     from audiowatch.logging import get_logger, setup_logging
 
     # Load settings and set up logging
@@ -167,12 +174,33 @@ def run(
         console.print("[blue]Running scraper once...[/blue]")
         asyncio.run(_run_scrape_once(settings, max_pages, headless))
     else:
+        # Use the scheduler for continuous monitoring
+        from audiowatch.scheduler import ScrapeScheduler, create_scrape_job
+
         console.print(
             f"[blue]Starting scheduled scraper (every {settings.scraper.poll_interval_minutes} minutes)...[/blue]"
         )
-        console.print("[dim]Press Ctrl+C to stop[/dim]")
-        # TODO: Implement scheduled scraping
-        console.print("[yellow]Scheduler not yet implemented. Coming in Phase 4![/yellow]")
+        console.print("[dim]Press Ctrl+C to stop[/dim]\n")
+
+        # Create job store path for persistence
+        job_store_path = settings.database.path.parent / "scheduler.db"
+
+        # Create the scrape job function
+        scrape_func = create_scrape_job(settings, max_pages, headless)
+
+        # Create and start the scheduler
+        scheduler = ScrapeScheduler(
+            settings=settings,
+            scrape_func=scrape_func,
+            job_store_path=job_store_path,
+        )
+
+        # Display next run time
+        if not skip_initial:
+            console.print("[green]Running initial scrape...[/green]")
+
+        # Run the scheduler (blocking)
+        scheduler.run_blocking(run_immediately=not skip_initial)
 
 
 async def _run_scrape_once(settings, max_pages: int, headless: bool) -> None:

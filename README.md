@@ -60,13 +60,29 @@ playwright install chromium
 | Command | Description |
 |---------|-------------|
 | `audiowatch init` | Initialize the database (creates tables) |
-| `audiowatch run` | Start continuous monitoring |
+| `audiowatch run` | Start continuous monitoring (scheduled) |
 | `audiowatch run --once` | Run a single scrape and exit |
+| `audiowatch run --skip-initial` | Start scheduler without immediate scrape |
+| `audiowatch run --max-pages 5` | Limit pages per category (default: 10) |
 | `audiowatch status` | Show status and statistics |
 | `audiowatch rules` | List configured watch rules |
 | `audiowatch listings` | Browse stored listings |
 | `audiowatch test-notify --channel discord` | Send a test notification |
 | `audiowatch dashboard` | Start the web dashboard |
+
+## Scheduler
+
+The scheduler runs scrapes at configurable intervals (1-60 minutes) with the following features:
+
+- **Job Persistence**: Scheduler state survives restarts (stored in `data/scheduler.db`)
+- **Graceful Shutdown**: Press `Ctrl+C` to stop cleanly
+- **Configurable Interval**: Set `poll_interval_minutes` in config.yaml
+- **Initial Scrape**: Runs immediately on start (skip with `--skip-initial`)
+
+```yaml
+scraper:
+  poll_interval_minutes: 5  # How often to check (1-60 minutes)
+```
 
 ## Configuration
 
