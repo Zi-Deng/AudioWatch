@@ -83,14 +83,15 @@ def init(
 
     db_path = settings.database.path
 
-    try:
-        if db_path.exists() and not force:
-            console.print(
-                f"[yellow]Database already exists at {db_path}[/yellow]\n"
-                "Use --force to reinitialize (this will delete all data)."
-            )
-            raise typer.Exit(1)
+    # Check if database exists
+    if db_path.exists() and not force:
+        console.print(
+            f"[green]Database already exists at {db_path}[/green]\n"
+            "[dim]Use --force to reinitialize (this will delete all data).[/dim]"
+        )
+        return
 
+    try:
         if force and db_path.exists():
             log.warning("Reinitializing database", path=str(db_path))
             reset_database(db_path)
