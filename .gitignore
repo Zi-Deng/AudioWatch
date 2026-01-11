@@ -215,3 +215,7 @@ config.yaml
 # OS specific
 .DS_Store
 Thumbs.db
+
+# Test artifacts
+first_listing.html
+headfi_sample.html

@@ -98,16 +98,35 @@ def init_database(engine: Engine | None = None) -> None:
     Base.metadata.create_all(engine)
 
 
-def reset_database(engine: Engine | None = None) -> None:
-    """Drop and recreate all tables. USE WITH CAUTION.
+def reset_database(database_path: Path | None = None) -> None:
+    """Drop and recreate the database. USE WITH CAUTION.
+
+    This deletes the database file and recreates it to avoid DuckDB
+    transaction issues with drop_all/create_all.
 
     Args:
-        engine: Optional SQLAlchemy engine. If None, uses get_engine().
+        database_path: Optional path to the database file.
     """
-    if engine is None:
-        engine = get_engine()
+    global _engine, _session_factory
 
-    Base.metadata.drop_all(engine)
+    # Close existing connections
+    if _engine is not None:
+        _engine.dispose()
+        _engine = None
+    _session_factory = None
+
+    # Get the path
+    if database_path is None:
+        from audiowatch.config import get_settings
+        settings = get_settings()
+        database_path = settings.database.path
+
+    # Delete the file if it exists
+    if database_path.exists():
+        database_path.unlink()
+
+    # Recreate with a fresh engine
+    engine = get_engine(database_path)
     Base.metadata.create_all(engine)
 
 
