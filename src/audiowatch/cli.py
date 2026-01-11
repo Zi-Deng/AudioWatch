@@ -178,11 +178,20 @@ def run(
 async def _run_scrape_once(settings, max_pages: int, headless: bool) -> None:
     """Run a single scrape operation."""
     from audiowatch.database import get_session
-    from audiowatch.database.repository import ListingRepository, ScrapeLogRepository
+    from audiowatch.database.repository import (
+        ListingRepository,
+        ScrapeLogRepository,
+        WatchRuleRepository,
+    )
     from audiowatch.logging import get_logger
+    from audiowatch.notifier import NotificationOrchestrator
     from audiowatch.scraper import HeadFiScraper
 
     log = get_logger("audiowatch.cli")
+    new_count = 0
+    updated_count = 0
+    notifications_sent = 0
+    new_listings = []
 
     with Progress(
         SpinnerColumn(),
@@ -213,13 +222,11 @@ async def _run_scrape_once(settings, max_pages: int, headless: bool) -> None:
                 # Create scrape log
                 scrape_log = scrape_log_repo.create()
 
-                new_count = 0
-                updated_count = 0
-
-                for listing in result.listings:
-                    _, is_new = listing_repo.upsert_from_scraped(listing)
+                for scraped in result.listings:
+                    listing, is_new = listing_repo.upsert_from_scraped(scraped)
                     if is_new:
                         new_count += 1
+                        new_listings.append(listing)
                     else:
                         updated_count += 1
 
@@ -236,6 +243,35 @@ async def _run_scrape_once(settings, max_pages: int, headless: bool) -> None:
 
                 session.commit()
 
+                # Process new listings for notifications
+                if new_listings:
+                    progress.update(task, description="Checking watch rules...")
+
+                    # Load watch rules from database
+                    rule_repo = WatchRuleRepository(session)
+                    db_rules = rule_repo.get_enabled()
+
+                    # Also load rules from config if any
+                    config_rules = []
+                    for rule in settings.watch_rules:
+                        if rule.enabled:
+                            # Create temporary WatchRuleDB-like object
+                            config_rules.append(_ConfigRuleWrapper(rule))
+
+                    all_rules = db_rules + config_rules
+
+                    if all_rules:
+                        orchestrator = NotificationOrchestrator(settings, session)
+                        orchestrator.load_rules(all_rules)
+
+                        progress.update(
+                            task,
+                            description=f"Matching {len(new_listings)} new listings..."
+                        )
+
+                        notifications_sent = await orchestrator.process_listings(new_listings)
+                        session.commit()
+
             progress.update(task, description="Done!")
 
     # Display results
@@ -249,11 +285,26 @@ async def _run_scrape_once(settings, max_pages: int, headless: bool) -> None:
     table.add_row("Total Listings Found", str(result.total_found))
     table.add_row("New Listings", str(new_count))
     table.add_row("Updated Listings", str(updated_count))
+    table.add_row("Notifications Sent", str(notifications_sent))
 
     if result.errors:
         table.add_row("Errors", ", ".join(result.errors))
 
     console.print(table)
+
+
+class _ConfigRuleWrapper:
+    """Wrapper to make config WatchRule compatible with WatchRuleDB interface."""
+
+    _id_counter = -1  # Use negative IDs for config rules
+
+    def __init__(self, rule):
+        self.id = _ConfigRuleWrapper._id_counter
+        _ConfigRuleWrapper._id_counter -= 1
+        self.name = rule.name
+        self.expression = rule.expression
+        self.notify_via = ",".join(rule.notify_via)
+        self.enabled = rule.enabled
 
 
 @app.command()
@@ -518,6 +569,74 @@ def list_categories() -> None:
         table.add_row(cat.slug, cat.name, str(cat.category_id))
 
     console.print(table)
+
+
+@app.command("test-notify")
+def test_notify(
+    config_path: Annotated[
+        Path,
+        typer.Option(
+            "--config",
+            "-c",
+            help="Path to configuration file.",
+        ),
+    ] = Path("config.yaml"),
+    channel: Annotated[
+        str,
+        typer.Option(
+            "--channel",
+            help="Notification channel to test (email or discord).",
+        ),
+    ] = "discord",
+) -> None:
+    """Send a test notification to verify configuration."""
+    from datetime import datetime
+
+    from audiowatch.config import get_settings
+    from audiowatch.logging import setup_logging
+    from audiowatch.notifier import DiscordNotifier, EmailNotifier, NotificationContent
+
+    settings = get_settings(config_path)
+    setup_logging(settings.logging)
+
+    # Create test notification content
+    content = NotificationContent(
+        title="Test Notification",
+        message="This is a test notification from AudioWatch.",
+        listing_url="https://www.head-fi.org/classifieds/",
+        listing_title="Test Listing - AudioWatch Configuration Test",
+        listing_price="$999.00 USD",
+        listing_condition="Excellent",
+        listing_seller="AudioWatch",
+        listing_image_url=None,
+        rule_name="Test Rule",
+        matched_at=datetime.now(),
+    )
+
+    if channel.lower() == "email":
+        notifier = EmailNotifier(settings.notifications.email)
+    elif channel.lower() == "discord":
+        notifier = DiscordNotifier(settings.notifications.discord)
+    else:
+        console.print(f"[red]Unknown channel: {channel}[/red]")
+        console.print("Valid channels: email, discord")
+        raise typer.Exit(1)
+
+    if not notifier.is_enabled():
+        console.print(f"[yellow]{channel} notifications are not enabled or configured.[/yellow]")
+        console.print("Check your config.yaml file.")
+        raise typer.Exit(1)
+
+    console.print(f"[blue]Sending test notification via {channel}...[/blue]")
+
+    # Run the async send
+    success = asyncio.run(notifier.send(content))
+
+    if success:
+        console.print(f"[green]Test notification sent successfully via {channel}![/green]")
+    else:
+        console.print(f"[red]Failed to send test notification via {channel}.[/red]")
+        raise typer.Exit(1)
 
 
 if __name__ == "__main__":
