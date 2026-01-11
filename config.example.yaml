@@ -1,0 +1,91 @@
+# AudioWatch Configuration
+# Copy this file to config.yaml and customize as needed.
+
+# Scraper settings
+scraper:
+  # How often to check for new listings (1-60 minutes)
+  poll_interval_minutes: 5
+
+  # How far back to scrape on first run (days)
+  initial_scrape_days: 30
+
+  # Delay between page requests to avoid rate limiting
+  rate_limit_delay_seconds: 2.0
+
+  # Which Head-Fi categories to monitor (all by default)
+  categories:
+    - headphones
+    - amplification
+    - source-components
+    - cables-accessories
+    - media
+
+  # Run browser in headless mode
+  headless: true
+
+  # Page load timeout in seconds
+  timeout_seconds: 30
+
+# Database settings
+database:
+  # Path to the DuckDB database file
+  path: "./data/audiowatch.db"
+
+# Notification settings
+notifications:
+  # Email notifications (Gmail SMTP)
+  email:
+    enabled: false
+    smtp_server: "smtp.gmail.com"
+    smtp_port: 587
+    # Use environment variables for sensitive data
+    sender_email: "${GMAIL_ADDRESS}"
+    sender_password: "${GMAIL_APP_PASSWORD}"
+    recipient_email: "your-email@example.com"
+    use_tls: true
+
+  # Discord notifications
+  discord:
+    enabled: false
+    # Use environment variable for webhook URL
+    webhook_url: "${DISCORD_WEBHOOK_URL}"
+
+# Watch rules - get notified when listings match these criteria
+watch_rules:
+  # Example: Notify when "Hercules Audio Moses" is listed under $3500
+  - name: "Moses Deal"
+    expression: 'title contains "Moses" AND price < 3500'
+    notify_via:
+      - email
+      - discord
+    enabled: true
+
+  # Example: Notify for any Sennheiser HD800 under $1000
+  - name: "HD800 Under 1k"
+    expression: 'title contains "HD800" AND price < 1000'
+    notify_via:
+      - discord
+    enabled: true
+
+  # Example: Notify for high-end DACs
+  - name: "High-End DAC Alert"
+    expression: 'category = "source-components" AND title contains "DAC" AND price > 2000'
+    notify_via:
+      - email
+    enabled: false
+
+# Dashboard settings
+dashboard:
+  port: 8501
+  host: "localhost"
+
+# Logging settings
+logging:
+  # Log level: DEBUG, INFO, WARNING, ERROR, CRITICAL
+  level: "INFO"
+
+  # Log format: console (colored) or json
+  format: "console"
+
+  # Optional: log to file (in addition to console)
+  # file: "./logs/audiowatch.log"

@@ -205,3 +205,13 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# AudioWatch specific
+data/
+logs/
+*.db
+config.yaml
+
+# OS specific
+.DS_Store
+Thumbs.db
