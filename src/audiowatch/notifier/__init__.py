@@ -98,7 +98,8 @@ class NotificationOrchestrator:
 
         for rule_id, (rule, evaluator) in self._rule_evaluators.items():
             # Check if already notified for this listing/rule combo
-            if self.notification_repo.has_been_notified(listing.id, rule_id):
+            # (only applies to database rules with positive IDs)
+            if rule_id > 0 and self.notification_repo.has_been_notified(listing.id, rule_id):
                 continue
 
             # Check if listing matches the rule
@@ -137,13 +138,15 @@ class NotificationOrchestrator:
                 # Send notification
                 success = await notifier.send(content)
 
-                # Log the notification attempt
-                self.notification_repo.log_notification(
-                    listing_id=listing.id,
-                    rule_id=rule_id,
-                    channel=channel,
-                    success=success,
-                )
+                # Log the notification attempt (only for database rules, not config rules)
+                # Config rules have negative IDs and can't be logged due to foreign key
+                if rule_id > 0:
+                    self.notification_repo.log_notification(
+                        listing_id=listing.id,
+                        rule_id=rule_id,
+                        channel=channel,
+                        success=success,
+                    )
 
                 if success:
                     notifications_sent += 1
